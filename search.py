@@ -20,7 +20,7 @@ if __name__ == '__main__':
     data = pd.read_csv('dataset/training-set.csv')
     counts = Counter(data.Intent.values)
 
-    filtered_intents = [text for text, count in counts.items() if count > 4]
+    filtered_intents = [text for text, count in counts.items() if count > 1]
 
     representations = {}
     test_set = {}
@@ -38,28 +38,34 @@ if __name__ == '__main__':
         }
         test_set[intent] = utterances
 
+    weight = 0.3
     rows = []
     for test_label, test_utterance in tqdm(test_set.items()):
         results = {}
         results_fuzz = {}
+        results_weights = {}
+
         test_embedding = pipeline_avg_glove(test_utterance)
         #test_embedding = embed([test_utterance])
         for rep_intent, rep_data in representations.items():
             results[rep_intent] = np.inner(rep_data['vector'], test_embedding)
-            results_fuzz[rep_intent] = max([fuzz.token_set_ratio(test_utterance, x) for x in rep_data['utterances']])
+            results_fuzz[rep_intent] = max([fuzz.token_set_ratio(test_utterance, x)/100 for x in rep_data['utterances']])
+            results_weights[rep_intent] = (weight * results[rep_intent]) + ((1-weight) * results_fuzz[rep_intent])
+
         
-        #rows.append([test_utterance, test_label, max(results, key=results.get),  max(results_fuzz, key=results_fuzz.get)])
+        rows.append([test_utterance, test_label, max(results, key=results.get),  max(results_fuzz, key=results_fuzz.get), max(results_weights, key=results_weights.get)])
+    result_df = pd.DataFrame(rows)
+    result_df.columns = ['utterance', 'true', 'predict', 'predict_fuzz', 'predict_weight']
+    print(sum(result_df['true'].values == result_df['predict_weight'].values)/result_df.shape[0])
 
-    results_weights = {}
-    for weight in tqdm(np.arange(0,1.1, 0.1)):
-        rows = []
-        for test_label, test_utterance in test_set.items():
-            for intent, cosine in results.items():
-                results_weights[intent] = (weight * results[intent]) + ((1-weight) * results_fuzz[intent])
-
-            rows.append([test_utterance, test_label, max(results_weights, key=results_weights.get)])
-        result_df = pd.DataFrame(rows)
-    #result_df.columns = ['utterance', 'true', 'predict', 'predict_fuzz']
-        result_df.columns = ['utterance', 'true', 'predict']
-        print(sum(result_df['true'].values == result_df['predict'].values)/result_df.shape[0])
-    #print(sum(result_df['true'].values == result_df['predict_fuzz'].values)/result_df.shape[0])
+    while True: 
+        print('Enter Input: ')
+        user_input = input()
+        input_embedding = pipeline_avg_glove(user_input)
+        results_weights = {}
+        for rep_intent, rep_data in representations.items():
+            cos_dist = np.inner(rep_data['vector'], input_embedding)
+            fuzz_score = max([fuzz.token_set_ratio(user_input, x)/100 for x in rep_data['utterances']])
+            results_weights[rep_intent] = (weight * cos_dist) + ((1-weight) * fuzz_score)
+        print('Journey: ' + str(max(results_weights, key=results_weights.get)))
+        print('\n')

@@ -7,27 +7,93 @@ from tqdm import tqdm
 from pymagnitude import Magnitude
 from nltk import word_tokenize
 from fuzzywuzzy import fuzz
-glove = Magnitude("../nlp-framework/vectors/glove.twitter.27B.100d.magnitude")
+#glove = Magnitude("../nlp-framework/vectors/glove.twitter.27B.100d.magnitude")
+embed = hub.load('4')
+
+PRIMARY_THRESHOLD = 0.9
+SECONDARY_THRESHOLD = 0.7
+SIMILARITY_THRESHOLD = 0.7
+WEIGHT = 0.9
 
 
 def pipeline_avg_glove(text):
     return np.average(glove.query(word_tokenize(text)), axis = 0)
 
+def similarity(sent_enc_rep):
+    rows = []
+    for _, outer_data in tqdm(sent_enc_rep.items()):
+        rows.append(predict(outer_data['utterances'][0], sent_enc_rep, return_res = True))
+    row_counter = 0 
+    file = open("similarity.txt","w") 
+    for _, data in tqdm(sent_enc_rep.items()):
+        file.write(data['utterances'][0] + ': \n')
+        for conf_uttr in rows[row_counter]:
+            if conf_uttr['Utterance'] == data['utterances'][0]:
+                continue
+            elif conf_uttr['Confidence'] > SIMILARITY_THRESHOLD:
+                file.write(conf_uttr['Utterance'] + '  ')
+                file.write(str(conf_uttr['Confidence']))
+                file.write('\n')
+        row_counter += 1 
+        file.write('\n\n')
+    file.close()
+
+
+def train(data):
+    print('Training....')
+    sent_enc_rep = {}
+    for intent in tqdm(data.Intent.unique()):
+        vecs = []
+        for utterance in data[data.Intent == intent].Utterance.values:
+            vecs.append(embed([utterance]))
+        sent_enc_rep[intent] = {
+            'sent_vector' : np.average(np.array(vecs), axis = 0)[0],
+            'utterances' : data[data.Intent == intent].Utterance.values
+        }
+    return sent_enc_rep
+
+def predict(user_input, sent_enc_rep, return_res = False):
+    #input_embedding = pipeline_avg_glove(user_input)
+    input_embedding =  embed([user_input])
+    results = []
+    for rep_intent, rep_data in sent_enc_rep.items():
+        cos_dist = np.inner(rep_data['sent_vector'], input_embedding)
+        fuzz_score = max([fuzz.token_sort_ratio(user_input, x)/100 for x in rep_data['utterances']])
+        results.append({
+            'Utterance' : rep_data['utterances'][0],
+            'Confidence': (WEIGHT * cos_dist) + ((1-WEIGHT) * fuzz_score)
+        })
+    if return_res:
+        return results
+    results_df = pd.DataFrame(results)
+    results_df = results_df.sort_values(by = ['Confidence'], ascending = False)
+    if results_df.Confidence.values[0] > PRIMARY_THRESHOLD:
+        print(results_df.Utterance.values[0])
+    else:
+        print('Did you mean :')
+        for utterance, confidence in zip(results_df.Utterance.values, results_df.Confidence.values):
+            if confidence > SECONDARY_THRESHOLD:
+                print(utterance)
+            else:
+                break
+        print('\n')
+
 if __name__ == '__main__':
+    data = pd.read_csv('dataset/flipkart.csv', nrows = 100)
+    
+        #test_set[intent] = utterances
+    sent_enc_rep = train(data)
+    similarity(sent_enc_rep)
+    #while True:
+    #    user_input = input()
+    #    predict(user_input, sent_enc_rep)
+   
+
+
+def test_split ():
     train_split = 0
-    PRIMARY_THRESHOLD = 0.9
-    SECONDARY_THRESHOLD = 0.7
-    SIMILARITY_THRESHOLD = 0.7
-
-
-
-
-    embed = hub.load('4')
-    data = pd.read_csv('dataset/flipkart.csv')
     counts = Counter(data.Intent.values)
-
     filtered_intents = [text for text, count in counts.items() if count > 0]
-
     representations = {}
     test_set = {}
     data = data[data['Intent'].isin(filtered_intents)]
@@ -43,89 +109,3 @@ if __name__ == '__main__':
             'vector' : vecs,
             'utterances' : temp.Utterance.values#[:-train_split]
         }
-        #test_set[intent] = utterances
-
-    weight = 0.9
-    """
-    rows = []
-    for test_label, test_utterance in tqdm(test_set.items()):
-        results = {}
-        results_fuzz = {}
-        results_weights = {}
-
-        #test_embedding = pipeline_avg_glove(test_utterance)
-        test_embedding = embed([test_utterance])
-        for rep_intent, rep_data in representations.items():
-            results[rep_intent] = np.inner(rep_data['vector'], test_embedding)
-            results_fuzz[rep_intent] = max([fuzz.token_set_ratio(test_utterance, x)/100 for x in rep_data['utterances']])
-            results_weights[rep_intent] = (weight * results[rep_intent]) + ((1-weight) * results_fuzz[rep_intent])
-
-        
-        rows.append([test_utterance, test_label, max(results, key=results.get),  max(results_fuzz, key=results_fuzz.get), max(results_weights, key=results_weights.get)])
-    result_df = pd.DataFrame(rows)
-    result_df.columns = ['utterance', 'true', 'predict', 'predict_fuzz', 'predict_weight']
-    print(sum(result_df['true'].values == result_df['predict_weight'].values)/result_df.shape[0])
-    """
-
-    rows = []
-    for _, outer_data in tqdm(representations.items()):
-        row = []
-        for _, inner_data in representations.items():
-            cos_dist = np.inner(inner_data['vector'], outer_data['vector'])
-            fuzz_score = max([fuzz.token_sort_ratio(outer_data['utterances'][0], x)/100 for x in inner_data['utterances']])
-            row.append({
-                'utterance' : inner_data['utterances'][0],
-                'confidence': (weight * cos_dist) + ((1-weight) * fuzz_score)
-                })
-        rows.append(row)
-
-
-    row_counter = 0 
-    file = open("similarity.txt","w") 
-
-    for _, data in tqdm(representations.items()):
-        file.write(data['utterances'][0] + ': \n')
-        for conf_uttr in rows[row_counter]:
-            if conf_uttr['utterance'] == data['utterances'][0]:
-                continue
-            elif conf_uttr['confidence'] > SIMILARITY_THRESHOLD:
-                file.write(conf_uttr['utterance'] + '  ')
-                file.write(str(conf_uttr['confidence']))
-                file.write('\n')
-        row_counter += 1 
-        file.write('\n\n')
-    file.close()
-
-
-"""
-    while True: 
-        print('\nEnter Input: ')
-        user_input = input()
-        #input_embedding = pipeline_avg_glove(user_input)
-        input_embedding =  embed([user_input])
-        results = []
-        for rep_intent, rep_data in representations.items():
-            cos_dist = np.inner(rep_data['vector'], input_embedding)
-            fuzz_score = max([fuzz.token_sort_ratio(user_input, x)/100 for x in rep_data['utterances']])
-            results.append({
-                'Utterance' : rep_data['utterances'][0],
-                'Confidence': (weight * cos_dist) + ((1-weight) * fuzz_score)
-            })
-
-        results = pd.DataFrame(results)
-        results = results.sort_values(by = ['Confidence'], ascending = False)
-        #max_values = sorted(results_weights.values())
-        #print('Journey: ' + str(max(results_weights, key=results_weights.get)))
-        #print('Confidence: ' +str(max(results_weights.values())))
-        #print('\n')
-        if results.Confidence.values[0] > PRIMARY_THRESHOLD:
-            print(results.Utterance.values[0])
-        else:
-            print('Did you mean :')
-            for utterance, confidence in zip(results.Utterance.values, results.Confidence.values):
-                if confidence > SECONDARY_THRESHOLD:
-                    print(utterance)
-                else:
-                    break
-            print('\n')
-"""

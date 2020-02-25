@@ -2,11 +2,11 @@ import tensorflow as tf
 import tensorflow_hub as hub 
 import numpy as np 
 import pandas as pd 
-from collections import Counter
 from tqdm import tqdm
-from pymagnitude import Magnitude
 from nltk import word_tokenize
 from fuzzywuzzy import fuzz
+#from collections import Counter
+#from pymagnitude import Magnitude
 #glove = Magnitude("../nlp-framework/vectors/glove.twitter.27B.100d.magnitude")
 embed = hub.load('4')
 

@@ -52,7 +52,7 @@ def train(data, embed):
         }
     return sent_enc_rep
 
-def predict(user_input, sent_enc_rep, embed, return_res = False, PRIMARY_THRESHOLD = 0.9, SECONDARY_THRESHOLD = 0.7):
+def predict(user_input, sent_enc_rep, embed, return_res = False, PRIMARY_THRESHOLD = 0.9, SECONDARY_THRESHOLD = 0.7, WEIGHT = 0.9):
     #input_embedding = pipeline_avg_glove(user_input)
     input_embedding =  embed([user_input])
     results = []

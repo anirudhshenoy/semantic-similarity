@@ -8,7 +8,7 @@ from fuzzywuzzy import fuzz
 #from collections import Counter
 #from pymagnitude import Magnitude
 #glove = Magnitude("../nlp-framework/vectors/glove.twitter.27B.100d.magnitude")
-embed = hub.load('4')
+#embed = hub.load('4')
 
 PRIMARY_THRESHOLD = 0.9
 SECONDARY_THRESHOLD = 0.7
@@ -39,7 +39,7 @@ def similarity(sent_enc_rep):
     file.close()
 
 
-def train(data):
+def train(data, embed):
     print('Training....')
     sent_enc_rep = {}
     for intent in tqdm(data.Intent.unique()):
@@ -52,7 +52,7 @@ def train(data):
         }
     return sent_enc_rep
 
-def predict(user_input, sent_enc_rep, return_res = False):
+def predict(user_input, sent_enc_rep, embed, return_res = False):
     #input_embedding = pipeline_avg_glove(user_input)
     input_embedding =  embed([user_input])
     results = []
@@ -79,6 +79,8 @@ def predict(user_input, sent_enc_rep, return_res = False):
         print('\n')
 
 if __name__ == '__main__':
+    embed = hub.load('4')
+
     data = pd.read_csv('dataset/flipkart.csv', nrows = 100)
     
         #test_set[intent] = utterances

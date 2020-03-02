@@ -5,6 +5,7 @@ import pandas as pd
 from tqdm import tqdm
 from nltk import word_tokenize
 from fuzzywuzzy import fuzz
+import math
 #from collections import Counter
 #from pymagnitude import Magnitude
 #glove = Magnitude("../nlp-framework/vectors/glove.twitter.27B.100d.magnitude")
@@ -39,16 +40,16 @@ def similarity(sent_enc_rep):
     file.close()
 
 
-def train(data, embed):
+def train(data, embed, uttr_col = 'Utterance', intent_col = 'Intent'):
     print('Training....')
     sent_enc_rep = {}
-    for intent in tqdm(data.Intent.unique()):
+    for intent in tqdm(data[intent_col].unique()):
         vecs = []
-        for utterance in data[data.Intent == intent].Utterance.values:
+        for utterance in data[data.Intent == intent][uttr_col].values:
             vecs.append(embed([utterance]))
         sent_enc_rep[intent] = {
             'sent_vector' : np.average(np.array(vecs), axis = 0)[0],
-            'utterances' : data[data.Intent == intent].Utterance.values
+            'utterances' : data[data.Intent == intent][uttr_col].values
         }
     return sent_enc_rep
 
@@ -68,7 +69,8 @@ def predict(user_input, sent_enc_rep, embed, return_res = False, PRIMARY_THRESHO
     results_df = pd.DataFrame(results)
     results_df = results_df.sort_values(by = ['Confidence'], ascending = False)
     if results_df.Confidence.values[0] > PRIMARY_THRESHOLD:
-        print(results_df.Utterance.values[0])
+        print('Journey:')
+        print(results_df.Utterance.values[0] + ' : ' + str(results_df.Confidence.values[0]))
     else:
         print('Did you mean :')
         for utterance, confidence in zip(results_df.Utterance.values, results_df.Confidence.values):
@@ -78,17 +80,40 @@ def predict(user_input, sent_enc_rep, embed, return_res = False, PRIMARY_THRESHO
                 break
         print('\n')
 
+def preprocess(data):
+    data.drop(['Tagging'], inplace = True, axis = 1)
+    data = data.fillna('NAN')
+    rows = []
+    for title, intent, utterances in tqdm(data.values):
+        #title = title.astype('str')
+        if title != 'NAN':
+            title = title.replace('\u200b', '')
+            title = title.replace('\n', '')
+            rows.append([title, intent])
+        for utterance in utterances.split('|'):
+            utterance = utterance.replace('\u200b', '')
+            utterance = utterance.replace('\n', '')
+
+            rows.append([utterance, intent])
+
+    data_mod = pd.DataFrame(rows, columns = ['Utterance', 'Intent'])
+    data_mod.to_csv('itd_preprocessed.csv')
+    return data_mod 
+
+
 if __name__ == '__main__':
     embed = hub.load('4')
 
-    data = pd.read_csv('dataset/flipkart.csv', nrows = 100)
-    
+    data = pd.read_csv('itd_preprocessed.csv')
+    data = data.dropna()
+    #print(preprocess(data))
         #test_set[intent] = utterances
-    sent_enc_rep = train(data)
-    similarity(sent_enc_rep)
-    #while True:
-    #    user_input = input()
-    #    predict(user_input, sent_enc_rep)
+    
+    sent_enc_rep = train(data, embed)
+    #similarity(sent_enc_rep)
+    while True:
+        user_input = input()
+        predict(user_input, sent_enc_rep, embed)
    
 
 
